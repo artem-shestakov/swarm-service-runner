@@ -4,6 +4,8 @@ Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"os"
+
 	"github.com/artem-shestakov/swarm-service-runner/pkg/swarmrunner"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -16,9 +18,16 @@ var createCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		file, err := cmd.Flags().GetString("file")
 		if err != nil {
-			logrus.Debugf("Couldn't get flag 'file'. %s", err.Error())
+			logrus.Debugln(err.Error())
 		}
-		swarmrunner.RunService(file)
+		services, err := swarmrunner.CreateServices(file)
+		if err != nil {
+			logrus.Errorln(err.Error())
+			os.Exit(1)
+		}
+		for _, svc := range *services {
+			swarmrunner.CreateService(svc)
+		}
 	},
 }
 

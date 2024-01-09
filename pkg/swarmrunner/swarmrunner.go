@@ -2,7 +2,6 @@ package swarmrunner
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -10,33 +9,29 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
-func RunService(file string) {
+func CreateServices(file string) (*[]swarm.ServiceSpec, error) {
+	var services []swarm.ServiceSpec
 	var yamlStruct map[string]interface{}
 
+	logrus.Debugf("Reading file %s", file)
 	data, err := os.ReadFile(file)
 	if err != nil {
-		fmt.Println(err)
-		return
+		logrus.Errorln(err.Error())
+		return nil, err
 	}
 
+	logrus.Debugf("Parsing yaml struct")
 	err = yaml.Unmarshal(data, &yamlStruct)
 	if err != nil {
-		fmt.Println(err)
-		return
+		logrus.Errorln(err.Error())
+		return nil, err
 	}
-
-	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		panic(err)
-	}
-	defer cli.Close()
 
 	for svcName, svcSpec := range yamlStruct["services"].(map[string]interface{}) {
-		fmt.Println(svcName)
 		swarmPorts := []swarm.PortConfig{}
 		if svcSpec.(map[string]interface{})["ports"] != nil {
 			for _, pubPorts := range svcSpec.(map[string]interface{})["ports"].([]interface{}) {
@@ -70,13 +65,28 @@ func RunService(file string) {
 				Ports: swarmPorts,
 			},
 		}
+		services = append(services, svc)
+	}
+	return &services, nil
+}
 
-		fmt.Println(svc)
-		svcResp, err := cli.ServiceCreate(ctx, svc, types.ServiceCreateOptions{})
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Println(svcResp)
+func CreateService(service swarm.ServiceSpec) {
+	ctx := context.Background()
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		panic(err)
+	}
+	defer cli.Close()
 
+	logrus.Infof("Creating service %s", service.Name)
+	svcResp, err := cli.ServiceCreate(ctx, service, types.ServiceCreateOptions{})
+	if err != nil {
+		logrus.Errorln(err.Error())
+	}
+	if svcResp.ID != "" {
+		logrus.Infof("Service %s created with ID %s", service.Name, svcResp.ID)
+	}
+	for _, svcWarn := range svcResp.Warnings {
+		logrus.Warn(svcWarn)
 	}
 }
