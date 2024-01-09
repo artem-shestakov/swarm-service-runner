@@ -1,0 +1,31 @@
+---
+services:
+  foo:
+    image: busybox
+    blkio_config:
+       weight: 300
+       weight_device:
+         - path: /dev/sda
+           weight: 400
+       device_read_bps:
+         - path: /dev/sdb
+           rate: '12mb'
+       device_read_iops:
+         - path: /dev/sdb
+           rate: 120
+       device_write_bps:
+         - path: /dev/sdb
+           rate: '1024k'
+       device_write_iops:
+         - path: /dev/sdb
+           rate: 30
+  web:
+    image: nginx
+    volumes:
+    - ./templates:/etc/nginx/templates
+    ports:
+    - "8080:80"
+    - "8443:443"
+    environment:
+    - NGINX_HOST=foobar.com
+    - NGINX_PORT=80
