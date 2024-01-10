@@ -70,23 +70,63 @@ func CreateServices(file string) (*[]swarm.ServiceSpec, error) {
 	return &services, nil
 }
 
-func CreateService(service swarm.ServiceSpec) {
+func CreateService(serviceSpec swarm.ServiceSpec) error {
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		panic(err)
+		logrus.Panicln(err)
 	}
 	defer cli.Close()
 
-	logrus.Infof("Creating service %s", service.Name)
-	svcResp, err := cli.ServiceCreate(ctx, service, types.ServiceCreateOptions{})
+	if ok, svcID, err := isServiceExists(ctx, cli, serviceSpec.Name); err != nil {
+		return err
+	} else if ok {
+		logrus.Infof("Service %s already exists. Updating...", serviceSpec.Name)
+		if err = serviceUpdate(ctx, cli, svcID, serviceSpec); err != nil {
+			return err
+		}
+	} else {
+		logrus.Infof("Creating service %s", serviceSpec.Name)
+		svcResp, err := cli.ServiceCreate(ctx, serviceSpec, types.ServiceCreateOptions{})
+		if err != nil {
+			logrus.Errorln(err.Error())
+			return err
+		}
+		if svcResp.ID != "" {
+			logrus.Infof("Service %s created with ID %s", serviceSpec.Name, svcResp.ID)
+		}
+		for _, svcWarn := range svcResp.Warnings {
+			logrus.Warn(svcWarn)
+		}
+	}
+	return nil
+}
+
+func isServiceExists(ctx context.Context, cli *client.Client, svcName string) (bool, string, error) {
+	svcList, err := cli.ServiceList(ctx, types.ServiceListOptions{})
 	if err != nil {
-		logrus.Errorln(err.Error())
+		return false, "", err
 	}
-	if svcResp.ID != "" {
-		logrus.Infof("Service %s created with ID %s", service.Name, svcResp.ID)
+	for _, svc := range svcList {
+		if svc.Spec.Name == svcName {
+			return true, svc.ID, nil
+		}
 	}
-	for _, svcWarn := range svcResp.Warnings {
-		logrus.Warn(svcWarn)
+	return false, "", nil
+}
+
+func serviceUpdate(ctx context.Context, cli *client.Client, serviceID string, serviceSpec swarm.ServiceSpec) error {
+	svc, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+	if err != nil {
+		return err
 	}
+	resp, err := cli.ServiceUpdate(ctx, serviceID, svc.Meta.Version, serviceSpec, types.ServiceUpdateOptions{})
+	if err != nil {
+		return err
+	}
+	logrus.Infof("Service %s was updated", svc.Spec.Name)
+	for respWarn := range resp.Warnings {
+		logrus.Warnln(respWarn)
+	}
+	return nil
 }
