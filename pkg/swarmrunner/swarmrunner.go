@@ -70,23 +70,44 @@ func CreateServices(file string) (*[]swarm.ServiceSpec, error) {
 	return &services, nil
 }
 
-func CreateService(service swarm.ServiceSpec) {
+func CreateService(service swarm.ServiceSpec) error {
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		panic(err)
+		logrus.Panicln(err)
 	}
 	defer cli.Close()
 
-	logrus.Infof("Creating service %s", service.Name)
-	svcResp, err := cli.ServiceCreate(ctx, service, types.ServiceCreateOptions{})
+	if ok, err := isServiceExists(ctx, cli, service.Name); err != nil {
+		return err
+	} else if ok {
+		logrus.Warnf("Service %s already exists", service.Name)
+	} else {
+		logrus.Infof("Creating service %s", service.Name)
+		svcResp, err := cli.ServiceCreate(ctx, service, types.ServiceCreateOptions{})
+		if err != nil {
+			logrus.Errorln(err.Error())
+			return err
+		}
+		if svcResp.ID != "" {
+			logrus.Infof("Service %s created with ID %s", service.Name, svcResp.ID)
+		}
+		for _, svcWarn := range svcResp.Warnings {
+			logrus.Warn(svcWarn)
+		}
+	}
+	return nil
+}
+
+func isServiceExists(ctx context.Context, cli *client.Client, svcName string) (bool, error) {
+	svcList, err := cli.ServiceList(ctx, types.ServiceListOptions{})
 	if err != nil {
-		logrus.Errorln(err.Error())
+		return false, err
 	}
-	if svcResp.ID != "" {
-		logrus.Infof("Service %s created with ID %s", service.Name, svcResp.ID)
+	for _, svc := range svcList {
+		if svc.Spec.Name == svcName {
+			return true, nil
+		}
 	}
-	for _, svcWarn := range svcResp.Warnings {
-		logrus.Warn(svcWarn)
-	}
+	return false, nil
 }
